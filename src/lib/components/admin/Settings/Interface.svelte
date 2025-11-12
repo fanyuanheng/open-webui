@@ -14,7 +14,8 @@
 	import type { Banner } from '$lib/types';
 
 	import { getBaseModels } from '$lib/apis/models';
-	import { getBanners, setBanners } from '$lib/apis/configs';
+	import { getBanners, setBanners, uploadLogo, resetLogo, getLogoStatus } from '$lib/apis/configs';
+	import { logoVersion } from '$lib/stores';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -46,6 +47,11 @@
 
 	let promptSuggestions = [];
 	let banners: Banner[] = [];
+	let logoStatus = {
+		splash: false,
+		favicon: false
+	};
+	let logoInputElement;
 
 	const updateInterfaceHandler = async () => {
 		taskConfig = await updateTaskConfig(localStorage.token, taskConfig);
@@ -70,6 +76,12 @@
 		taskConfig = await getTaskConfig(localStorage.token);
 		promptSuggestions = $config?.default_prompt_suggestions ?? [];
 		banners = await getBanners(localStorage.token);
+		try {
+			logoStatus = await getLogoStatus(localStorage.token);
+		} catch (error) {
+			console.error('Failed to get logo status:', error);
+			logoStatus = { splash: false, favicon: false };
+		}
 
 		workspaceModels = await getBaseModels(localStorage.token);
 		baseModels = await getModels(localStorage.token, null, false);
@@ -387,6 +399,65 @@
 				<div class=" mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('UI')}</div>
 
 				<hr class=" border-gray-100 dark:border-gray-850 my-2" />
+
+				<input
+					bind:this={logoInputElement}
+					type="file"
+					hidden
+					accept="image/*"
+					on:change={async () => {
+						const file = logoInputElement.files?.[0];
+						if (file) {
+							try {
+								// Upload to both splash and favicon
+								await uploadLogo(localStorage.token, 'splash', file);
+								await uploadLogo(localStorage.token, 'favicon', file);
+								toast.success($i18n.t('Logo and favicon uploaded successfully'));
+								logoStatus = await getLogoStatus(localStorage.token);
+								logoStatus = logoStatus; // trigger reactivity
+								// Update logo version to force cache refresh
+								logoVersion.set(Date.now());
+							} catch (error) {
+								toast.error(error || $i18n.t('Failed to upload logo'));
+							}
+							logoInputElement.value = '';
+						}
+					}}
+				/>
+
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div id="logo-image-label" class=" self-center text-xs">
+							{$i18n.t('Logo / Favicon Image')}
+						</div>
+
+						<button
+							aria-labelledby="logo-image-label logo-image-state"
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={async () => {
+								if (logoStatus.splash || logoStatus.favicon) {
+									try {
+										await resetLogo(localStorage.token, 'all');
+										toast.success($i18n.t('Logo reset to default'));
+										logoStatus = await getLogoStatus(localStorage.token);
+										logoStatus = logoStatus; // trigger reactivity
+										// Update logo version to force cache refresh
+										logoVersion.set(Date.now());
+									} catch (error) {
+										toast.error(error || $i18n.t('Failed to reset logo'));
+									}
+								} else {
+									logoInputElement.click();
+								}
+							}}
+							type="button"
+						>
+							<span class="ml-2 self-center" id="logo-image-state"
+								>{logoStatus.splash || logoStatus.favicon ? $i18n.t('Reset') : $i18n.t('Upload')}</span
+							>
+						</button>
+					</div>
+				</div>
 
 				<div class="mb-2.5">
 					<div class="flex w-full justify-between">

@@ -47,6 +47,9 @@ export const TTSWorker = writable(null);
 export const chatId = writable('');
 export const chatTitle = writable('');
 
+// Logo version for cache-busting
+export const logoVersion = writable(Date.now());
+
 export const channels = writable([]);
 export const chats = writable(null);
 export const pinnedChats = writable([]);

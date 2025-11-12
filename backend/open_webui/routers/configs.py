@@ -1,6 +1,9 @@
 import logging
 import copy
-from fastapi import APIRouter, Depends, Request, HTTPException
+import os
+import shutil
+from pathlib import Path
+from fastapi import APIRouter, Depends, Request, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel, ConfigDict
 import aiohttp
 
@@ -9,6 +12,7 @@ from typing import Optional
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.config import get_config, save_config
 from open_webui.config import BannerModel
+from open_webui.env import STATIC_DIR, FRONTEND_BUILD_DIR
 
 from open_webui.utils.tools import (
     get_tool_server_data,
@@ -508,3 +512,128 @@ async def get_banners(
     user=Depends(get_verified_user),
 ):
     return request.app.state.config.BANNERS
+
+
+############################
+# Logo / Favicon Upload
+############################
+
+
+@router.post("/logo/upload")
+async def upload_logo(
+    request: Request,
+    logo_type: str = Form(...),  # "splash" or "favicon"
+    file: UploadFile = File(...),
+    user=Depends(get_admin_user),
+):
+    """
+    Upload a custom logo or favicon. Supported types: splash, favicon
+    """
+    if logo_type not in ["splash", "favicon"]:
+        raise HTTPException(status_code=400, detail="Invalid logo type. Must be 'splash' or 'favicon'")
+
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        # Determine target filename(s)
+        if logo_type == "splash":
+            filenames = ["splash.png"]
+        else:  # favicon
+            # Also update favicon-dark.png when favicon is uploaded
+            filenames = ["favicon.png", "favicon-dark.png"]
+
+        # Read file content
+        contents = await file.read()
+
+        # Validate file size (max 5MB)
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size must be less than 5MB")
+
+        # Save to static directory for all target filenames
+        for filename in filenames:
+            target_path = STATIC_DIR / filename
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(target_path, "wb") as f:
+                f.write(contents)
+
+            # Also copy to build directory if it exists
+            if FRONTEND_BUILD_DIR.exists():
+                build_target = FRONTEND_BUILD_DIR / "static" / filename
+                build_target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(target_path, build_target)
+
+        log.info(f"Logo uploaded successfully: {', '.join(filenames)}")
+        return {"status": True, "message": f"{logo_type.capitalize()} uploaded successfully"}
+
+    except Exception as e:
+        log.error(f"Error uploading logo: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading logo: {str(e)}")
+
+
+@router.get("/logo/status")
+async def get_logo_status(
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """
+    Check if custom logos exist
+    """
+    splash_exists = (STATIC_DIR / "splash.png").exists()
+    favicon_exists = (STATIC_DIR / "favicon.png").exists()
+
+    return {
+        "splash": splash_exists,
+        "favicon": favicon_exists,
+    }
+
+
+@router.delete("/logo/reset")
+async def reset_logo(
+    request: Request,
+    logo_type: str = Form(...),  # "splash", "favicon", or "all"
+    user=Depends(get_admin_user),
+):
+    """
+    Reset logo(s) to default by removing custom logo files
+    """
+    if logo_type not in ["splash", "favicon", "all"]:
+        raise HTTPException(status_code=400, detail="Invalid logo type")
+
+    try:
+        logos_to_reset = []
+        if logo_type == "all":
+            logos_to_reset = ["splash.png", "favicon.png", "favicon-dark.png"]
+        elif logo_type == "favicon":
+            # Reset both favicon and favicon-dark
+            logos_to_reset = ["favicon.png", "favicon-dark.png"]
+        else:
+            logos_to_reset = [f"{logo_type}.png"]
+
+        for logo_file in logos_to_reset:
+            logo_path = STATIC_DIR / logo_file
+            if logo_path.exists():
+                logo_path.unlink()
+                log.info(f"Removed custom logo: {logo_file}")
+
+            # Also remove from build directory if it exists
+            if FRONTEND_BUILD_DIR.exists():
+                build_logo_path = FRONTEND_BUILD_DIR / "static" / logo_file
+                if build_logo_path.exists():
+                    build_logo_path.unlink()
+
+        # Copy default logos from frontend build if they exist
+        if FRONTEND_BUILD_DIR.exists():
+            for logo_file in logos_to_reset:
+                default_logo = FRONTEND_BUILD_DIR / "static" / logo_file
+                if default_logo.exists():
+                    target_logo = STATIC_DIR / logo_file
+                    shutil.copyfile(default_logo, target_logo)
+
+        return {"status": True, "message": f"Logo(s) reset successfully"}
+
+    except Exception as e:
+        log.error(f"Error resetting logo: {e}")
+        raise HTTPException(status_code=500, detail=f"Error resetting logo: {str(e)}")
