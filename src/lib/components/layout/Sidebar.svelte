@@ -13,6 +13,7 @@
 		folders as _folders,
 		showSidebar,
 		showSearch,
+		showAgentLibrary,
 		mobile,
 		showArchivedChats,
 		pinnedChats,
@@ -58,10 +59,12 @@
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
 	import SearchModal from './SearchModal.svelte';
+	import AgentLibraryModal from './AgentLibraryModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
 	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
 	import Note from '../icons/Note.svelte';
+	import BookOpen from '../icons/BookOpen.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
@@ -530,6 +533,15 @@
 	}}
 />
 
+<AgentLibraryModal
+	bind:show={$showAgentLibrary}
+	onClose={() => {
+		if ($mobile) {
+			showSidebar.set(false);
+		}
+	}}
+/>
+
 <button
 	id="sidebar-new-chat-button"
 	class="hidden"
@@ -678,6 +690,26 @@
 						</Tooltip>
 					</div>
 				{/if}
+
+				<div class="">
+					<Tooltip content={$i18n.t('Agent Library')} placement="right">
+						<button
+							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							on:click={(e) => {
+								e.stopImmediatePropagation();
+								e.preventDefault();
+
+								showAgentLibrary.set(true);
+							}}
+							draggable="false"
+							aria-label={$i18n.t('Agent Library')}
+						>
+							<div class=" self-center flex items-center justify-center size-9">
+								<BookOpen className="size-4.5" />
+							</div>
+						</button>
+					</Tooltip>
+				</div>
 			</div>
 		</button>
 
@@ -889,6 +921,26 @@
 							</a>
 						</div>
 					{/if}
+
+					<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
+						<button
+							id="sidebar-agent-library-button"
+							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+							on:click={() => {
+								showAgentLibrary.set(true);
+							}}
+							draggable="false"
+							aria-label={$i18n.t('Agent Library')}
+						>
+							<div class="self-center">
+								<BookOpen strokeWidth="2" className="size-4.5" />
+							</div>
+
+							<div class="flex flex-1 self-center translate-y-[0.5px]">
+								<div class=" self-center text-sm font-primary">{$i18n.t('Agent Library')}</div>
+							</div>
+						</button>
+					</div>
 				</div>
 
 				{#if ($models ?? []).length > 0 && ($settings?.pinnedModels ?? []).length > 0}
